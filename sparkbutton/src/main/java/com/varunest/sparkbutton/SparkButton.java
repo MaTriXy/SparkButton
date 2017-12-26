@@ -7,6 +7,7 @@ import android.animation.ObjectAnimator;
 import android.annotation.TargetApi;
 import android.content.Context;
 import android.content.res.TypedArray;
+import android.graphics.PorterDuff;
 import android.os.Build;
 import android.support.v4.content.ContextCompat;
 import android.util.AttributeSet;
@@ -19,15 +20,15 @@ import android.view.animation.OvershootInterpolator;
 import android.widget.FrameLayout;
 import android.widget.ImageView;
 
-import com.varunest.sparkbutton.heplers.CircleView;
-import com.varunest.sparkbutton.heplers.DotsView;
-import com.varunest.sparkbutton.heplers.Utils;
+import com.varunest.sparkbutton.helpers.CircleView;
+import com.varunest.sparkbutton.helpers.DotsView;
+import com.varunest.sparkbutton.helpers.Utils;
 
 /**
  * @author varun 7th July 2016
  */
 public class SparkButton extends FrameLayout implements View.OnClickListener {
-    private static final DecelerateInterpolator DECCELERATE_INTERPOLATOR = new DecelerateInterpolator();
+    private static final DecelerateInterpolator DECELERATE_INTERPOLATOR = new DecelerateInterpolator();
     private static final AccelerateDecelerateInterpolator ACCELERATE_DECELERATE_INTERPOLATOR = new AccelerateDecelerateInterpolator();
     private static final OvershootInterpolator OVERSHOOT_INTERPOLATOR = new OvershootInterpolator(4);
 
@@ -44,13 +45,15 @@ public class SparkButton extends FrameLayout implements View.OnClickListener {
     int circleSize;
     int secondaryColor;
     int primaryColor;
+    int activeImageTint;
+    int inActiveImageTint;
     DotsView dotsView;
     CircleView circleView;
     ImageView imageView;
 
     boolean pressOnTouch = true;
     float animationSpeed = 1;
-    boolean isChecked = true;
+    boolean isChecked = false;
 
     private AnimatorSet animatorSet;
     private SparkEventListener listener;
@@ -107,8 +110,15 @@ public class SparkButton extends FrameLayout implements View.OnClickListener {
 
         imageView.getLayoutParams().height = imageSize;
         imageView.getLayoutParams().width = imageSize;
-        if (imageResourceIdActive != INVALID_RESOURCE_ID) {
+        if (imageResourceIdInactive != INVALID_RESOURCE_ID) {
+            // should load inactive img first
+            imageView.setImageResource(imageResourceIdInactive);
+            imageView.setColorFilter(inActiveImageTint, PorterDuff.Mode.SRC_ATOP);
+        } else if (imageResourceIdActive != INVALID_RESOURCE_ID) {
             imageView.setImageResource(imageResourceIdActive);
+            imageView.setColorFilter(activeImageTint, PorterDuff.Mode.SRC_ATOP);
+        } else {
+            throw new IllegalArgumentException("One of Inactive/Active Image Resources are required!!");
         }
         setOnTouchListener();
         setOnClickListener(this);
@@ -133,12 +143,12 @@ public class SparkButton extends FrameLayout implements View.OnClickListener {
 
         ObjectAnimator outerCircleAnimator = ObjectAnimator.ofFloat(circleView, CircleView.OUTER_CIRCLE_RADIUS_PROGRESS, 0.1f, 1f);
         outerCircleAnimator.setDuration((long) (250 / animationSpeed));
-        outerCircleAnimator.setInterpolator(DECCELERATE_INTERPOLATOR);
+        outerCircleAnimator.setInterpolator(DECELERATE_INTERPOLATOR);
 
         ObjectAnimator innerCircleAnimator = ObjectAnimator.ofFloat(circleView, CircleView.INNER_CIRCLE_RADIUS_PROGRESS, 0.1f, 1f);
         innerCircleAnimator.setDuration((long) (200 / animationSpeed));
         innerCircleAnimator.setStartDelay((long) (200 / animationSpeed));
-        innerCircleAnimator.setInterpolator(DECCELERATE_INTERPOLATOR);
+        innerCircleAnimator.setInterpolator(DECELERATE_INTERPOLATOR);
 
         ObjectAnimator starScaleYAnimator = ObjectAnimator.ofFloat(imageView, ImageView.SCALE_Y, 0.2f, 1f);
         starScaleYAnimator.setDuration((long) (350 / animationSpeed));
@@ -172,18 +182,55 @@ public class SparkButton extends FrameLayout implements View.OnClickListener {
                 imageView.setScaleX(1);
                 imageView.setScaleY(1);
             }
+
+            @Override
+            public void onAnimationEnd(Animator animation) {
+                super.onAnimationEnd(animation);
+                if (listener != null) {
+                    listener.onEventAnimationEnd(imageView,isChecked);
+                }
+            }
+
+            @Override
+            public void onAnimationStart(Animator animation) {
+                super.onAnimationEnd(animation);
+                if (listener != null) {
+                    listener.onEventAnimationStart(imageView,isChecked);
+                }
+            }
         });
 
         animatorSet.start();
     }
 
     /**
+     * Returns whether the button is checked (Active) or not.
+     *
+     * @return
+     */
+    public boolean isChecked() {
+        return isChecked;
+    }
+
+    /**
      * Change Button State (Works only if both active and disabled image resource is defined)
-     * @param flag
+     *
+     * @param flag desired checked state of the button
      */
     public void setChecked(boolean flag) {
         isChecked = flag;
         imageView.setImageResource(isChecked ? imageResourceIdActive : imageResourceIdInactive);
+        imageView.setColorFilter(isChecked ? activeImageTint : inActiveImageTint, PorterDuff.Mode.SRC_ATOP);
+    }
+    
+    public void setInactiveImage(int inactiveResource){
+        this.imageResourceIdInactive = inactiveResource;
+        imageView.setImageResource(isChecked ? imageResourceIdActive : imageResourceIdInactive);;
+    }
+
+    public void setActiveImage(int activeResource){
+        this.imageResourceIdActive = activeResource;
+        imageView.setImageResource(isChecked ? imageResourceIdActive : imageResourceIdInactive);;
     }
 
     public void setEventListener(SparkEventListener listener) {
@@ -201,12 +248,18 @@ public class SparkButton extends FrameLayout implements View.OnClickListener {
             isChecked = !isChecked;
 
             imageView.setImageResource(isChecked ? imageResourceIdActive : imageResourceIdInactive);
+            imageView.setColorFilter(isChecked ? activeImageTint : inActiveImageTint, PorterDuff.Mode.SRC_ATOP);
 
             if (animatorSet != null) {
                 animatorSet.cancel();
             }
             if (isChecked) {
+                circleView.setVisibility(View.VISIBLE);
+                dotsView.setVisibility(VISIBLE);
                 playAnimation();
+            } else {
+                dotsView.setVisibility(INVISIBLE);
+                circleView.setVisibility(View.GONE);
             }
         } else {
             playAnimation();
@@ -223,26 +276,23 @@ public class SparkButton extends FrameLayout implements View.OnClickListener {
                 public boolean onTouch(View v, MotionEvent event) {
                     switch (event.getAction()) {
                         case MotionEvent.ACTION_DOWN:
-                            imageView.animate().scaleX(0.8f).scaleY(0.8f).setDuration(150).setInterpolator(DECCELERATE_INTERPOLATOR);
+                            imageView.animate().scaleX(0.8f).scaleY(0.8f).setDuration(150).setInterpolator(DECELERATE_INTERPOLATOR);
                             setPressed(true);
                             break;
 
                         case MotionEvent.ACTION_MOVE:
-                            float x = event.getX();
-                            float y = event.getY();
-                            boolean isInside = (x > 0 && x < getWidth() && y > 0 && y < getHeight());
-                            if (isPressed() != isInside) {
-                                setPressed(isInside);
-                            }
                             break;
 
                         case MotionEvent.ACTION_UP:
-                        case MotionEvent.ACTION_CANCEL:
-                            imageView.animate().scaleX(1).scaleY(1).setInterpolator(DECCELERATE_INTERPOLATOR);
+                            imageView.animate().scaleX(1).scaleY(1).setInterpolator(DECELERATE_INTERPOLATOR);
                             if (isPressed()) {
                                 performClick();
                                 setPressed(false);
                             }
+                            break;
+
+                        case MotionEvent.ACTION_CANCEL:
+                            imageView.animate().scaleX(1).scaleY(1).setInterpolator(DECELERATE_INTERPOLATOR);
                             break;
                     }
                     return true;
@@ -260,7 +310,11 @@ public class SparkButton extends FrameLayout implements View.OnClickListener {
         imageResourceIdInactive = a.getResourceId(R.styleable.sparkbutton_sparkbutton_inActiveImage, INVALID_RESOURCE_ID);
         primaryColor = ContextCompat.getColor(getContext(), a.getResourceId(R.styleable.sparkbutton_sparkbutton_primaryColor, R.color.spark_primary_color));
         secondaryColor = ContextCompat.getColor(getContext(), a.getResourceId(R.styleable.sparkbutton_sparkbutton_secondaryColor, R.color.spark_secondary_color));
+        activeImageTint = ContextCompat.getColor(getContext(), a.getResourceId(R.styleable.sparkbutton_sparkbutton_activeImageTint, R.color.spark_image_tint));
+        inActiveImageTint = ContextCompat.getColor(getContext(), a.getResourceId(R.styleable.sparkbutton_sparkbutton_inActiveImageTint, R.color.spark_image_tint));
         pressOnTouch = a.getBoolean(R.styleable.sparkbutton_sparkbutton_pressOnTouch, true);
         animationSpeed = a.getFloat(R.styleable.sparkbutton_sparkbutton_animationSpeed, 1);
+        // recycle typedArray
+        a.recycle();
     }
 }
